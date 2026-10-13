@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://docs.gbtec.com/help/portal"
 LANGS = ("de", "en")
 
-DEFAULT_MAX_AGE_SECONDS = 60 * 60  # 1 hour
+DEFAULT_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours (1 day)
 
 _SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);

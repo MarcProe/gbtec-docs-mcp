@@ -24,7 +24,7 @@ in den Sprachen **de** und **en**.
   die autoritative Seitenliste (aktuell ~61 Seiten/Sprache); die HTML-Seiten
   werden zu Markdown konvertiert und in SQLite (FTS5) indexiert.
 * **Frische:** Bei jedem Tool-Aufruf wird die Index-Alter geprüft. Ist der
-  Index **älter als 1 Stunde** (konfigurierbar via
+  Index **älter als 24 Stunden** (konfigurierbar via
   `GBTEC_DOCS_MCP_MAX_AGE` in Sekunden), startet der Server einen
   **Background-Rebuild**, der **atomar** (Write-to-temp + `os.replace`)
   einspielt. Anfragen laufen immer weiter gegen den aktuellen Index –

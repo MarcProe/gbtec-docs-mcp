@@ -4,7 +4,7 @@ Structured search and page retrieval for AI agents, based on the
 Sphinx/ReadTheDocs documentation at https://docs.gbtec.com/help/portal/
 
 The server keeps a local SQLite (FTS5) index of the documentation.
-If the index is older than a configurable age (default 1 hour), a
+If the index is older than a configurable age (default 24 hours), a
 background thread rebuilds it and swaps it in atomically. All requests
 are always served from the current (possibly just slightly stale) index.
 """

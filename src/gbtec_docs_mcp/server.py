@@ -135,7 +135,7 @@ def create_server() -> FastMCP:
     def index_status() -> str:
         """Show the state of the local documentation index:
         age, page counts per language and size. A background refresh
-        is started automatically when the index is older than one hour."""
+        is started automatically when the index is older than 24 hours."""
         maybe_refresh_index()
         stats = store.stats()
         if stats is None:
