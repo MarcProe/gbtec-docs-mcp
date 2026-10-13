@@ -21,21 +21,28 @@ in den Sprachen **de** und **en**.
 ## Wie der Index funktioniert
 
 * **Quelle:** Der Sphinx-Suchindex (`searchindex.js` pro Sprache) liefert
-  die autoritative Seitenliste (aktuell 61 Seiten pro Sprache); die
-  HTML-Seiten werden zu Markdown konvertiert und in SQLite (FTS5)
-  indexiert.
+  die autoritative Seitenliste (aktuell ~61 Seiten/Sprache); die HTML-Seiten
+  werden zu Markdown konvertiert und in SQLite (FTS5) indexiert.
 * **Frische:** Bei jedem Tool-Aufruf wird die Index-Alter geprüft. Ist der
-  Index **älter als 1 Stunde** (konfigurierbar via `GBTEC_DOCS_MCP_MAX_AGE`
-  in Sekunden), startet der Server einen **Background-Rebuild**, der
-  **atomar** (Write-to-temp + `os.replace`) einspielt. Anfragen laufen
-  immer weiter gegen den aktuellen Index – der Server wartet nie auf den
-  Refresh. Die Check-Logik selbst ist auf max. 1×/Minute gedrosselt.
+  Index **älter als 1 Stunde** (konfigurierbar via
+  `GBTEC_DOCS_MCP_MAX_AGE` in Sekunden), startet der Server einen
+  **Background-Rebuild**, der **atomar** (Write-to-temp + `os.replace`)
+  einspielt. Anfragen laufen immer weiter gegen den aktuellen Index –
+  der Server wartet nie auf den Refresh.
 * **Cache:** `~/.cache/gbtec-docs-mcp/index.db`
   (override via `GBTEC_DOCS_MCP_CACHE`).
 
 ## Nutzung
 
-### mcphub / generisch (uvx aus dem Git-Repo)
+### Direkt (uv)
+
+```bash
+uvx --from "gbtec-docs-mcp @ git+https://github.com/MarcProe/gbtec-docs-mcp" gbtec-docs-mcp
+# oder lokal:
+uv sync && uv run gbtec-docs-mcp
+```
+
+### mcphub
 
 ```bash
 uvx --from "gbtec-docs-mcp @ git+https://github.com/MarcProe/gbtec-docs-mcp" gbtec-docs-mcp
