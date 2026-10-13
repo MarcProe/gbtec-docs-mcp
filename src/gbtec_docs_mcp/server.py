@@ -33,6 +33,16 @@ def create_server() -> FastMCP:
     store = IndexStore()
     mcp = FastMCP(SERVER_NAME, instructions=SERVER_DESCRIPTION)
 
+    _BUILDING = (
+        "The documentation index is still being built (first start or the "
+        "index is being rebuilt). Please retry in a few seconds."
+    )
+
+    def _ready() -> bool:
+        """Ensure the index is usable; return False when it still is not."""
+        maybe_refresh_index()
+        return store.stats() is not None
+
     @mcp.tool()
     def search_docs(
         query: str,
@@ -52,7 +62,8 @@ def create_server() -> FastMCP:
             JSON with matching pages: lang, path, title, url, snippet,
             rank. Follow up with ``get_page`` using the returned path.
         """
-        maybe_refresh_index()
+        if not _ready():
+            return _BUILDING
         limit = max(1, min(int(limit), 25))
         try:  # noqa: SIM105
             rows = store.search(query, lang=lang, limit=limit)
@@ -88,7 +99,8 @@ def create_server() -> FastMCP:
             path: Page path from ``search_docs`` results, e.g.
                 ``"Design/chatbot"`` or ``"releasenotes"``.
         """
-        maybe_refresh_index()
+        if not _ready():
+            return _BUILDING
         row = store.get_page(lang, path)
         if row is None:
             # Try case-insensitive fallback on path.
@@ -116,7 +128,8 @@ def create_server() -> FastMCP:
         EAM, GRCM (GRC Management), WO (Work Orchestrator) plus
         cross-product pages (index, mygbtec, releasenotes, publicApi, ...).
         """
-        maybe_refresh_index()
+        if not _ready():
+            return _BUILDING
         rows = store.list_sections(lang)
         lines: list[str] = []
         cur = ""
@@ -139,7 +152,10 @@ def create_server() -> FastMCP:
         maybe_refresh_index()
         stats = store.stats()
         if stats is None:
-            return "Index is empty; a background build was just started."
+            return (
+                "Index is empty and is being built now. Please retry in a "
+                "few seconds."
+            )
         return (
             f"Index built at: {stats.built_at} "
             f"({stats.age_seconds / 60:.0f} min ago)\n"

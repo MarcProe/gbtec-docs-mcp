@@ -25,6 +25,7 @@ import signal
 import sqlite3
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +37,11 @@ BASE_URL = "https://docs.gbtec.com/help/portal"
 LANGS = ("de", "en")
 
 DEFAULT_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours (1 day)
+
+# How long a cold-start tool call blocks while the *initial* index is being
+# built. A stale index can be served while a background refresh runs, but a
+# missing index cannot — so the first call waits (bounded) for the build.
+DEFAULT_INITIAL_BUILD_WAIT_SECONDS = 120.0
 
 _SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -279,12 +285,16 @@ def build_index(
     target: Path | None = None,
     langs: tuple[str, ...] = LANGS,
     session: httpx.Client | None = None,
-    force: bool = False,
+    force: bool = False,  # kept for API compatibility; all pages are always refetched
 ) -> IndexStats:
     """Build a fresh index and promote it atomically.
 
-    ``force`` skips the per-page cache (by updated_at) and refetches
-    everything.
+    Every page listed in the Sphinx ``searchindex.js`` is fetched and
+    converted on each build (pages are small and this runs only on cold
+    start or the 24h refresh), so the index always reflects the live docs.
+    Fetching is done concurrently (``GBTEC_DOCS_MCP_WORKERS`` threads,
+    default 8); a single failing page is skipped, never fatal for the
+    whole index.
     """
     from bs4 import BeautifulSoup  # noqa: F401  (ensures dep is present)
 
@@ -300,21 +310,6 @@ def build_index(
         follow_redirects=True,
     )
 
-    # Reuse unchanged pages from the live index to keep rebuilds cheap.
-    existing: dict[tuple[str, str], tuple[str, str]] = {}
-    if target.exists():
-        try:
-            with IndexStore(target).connect() as conn:
-                for row in conn.execute(
-                    "SELECT lang, path, title, markdown FROM pages"
-                ):
-                    existing[(row["lang"], row["path"])] = (
-                        row["title"],
-                        row["markdown"],
-                    )
-        except sqlite3.DatabaseError:
-            existing = {}
-
     conn = sqlite3.connect(tmp)
     # Keep the building db in rollback journal mode so it ends up as a
     # single self-contained file before we promote it atomically.
@@ -322,21 +317,38 @@ def build_index(
     conn.executescript(_SCHEMA)
     conn.execute("INSERT OR REPLACE INTO meta VALUES ('built_at', ?)", (_now_iso(),))
 
+    # Build the work list from the authoritative searchindex per language.
+    jobs: list[tuple[str, str, str, str]] = []  # (lang, base, path, title)
+    for lang in langs:
+        base = f"{BASE_URL}/{lang}/"
+        raw = client.get(base + "searchindex.js").text
+        for path, title in parse_searchindex(raw):
+            jobs.append((lang, base, path, title))
+
+    def fetch_page(job: tuple[str, str, str, str]) -> tuple[str, str, str, str, str]:
+        """Fetch one page and convert to Markdown (no SQLite in the worker)."""
+        lang, base, path, title = job
+        url = base + path + ".html"
+        r = client.get(url)
+        r.raise_for_status()
+        return lang, path, title, url, _html_to_markdown(r.text, base)
+
+    # Fetch + convert concurrently (the slow, network-bound part). httpx.Client
+    # is thread-safe; all SQLite writes happen on the main thread below.
+    workers = max(1, int(os.environ.get("GBTEC_DOCS_MCP_WORKERS", "8")))
     pages_count = 0
+    skipped = 0
     try:
-        for lang in langs:
-            base = f"{BASE_URL}/{lang}/"
-            raw = client.get(base + "searchindex.js").text
-            docnames = parse_searchindex(raw)
-            for path, title in docnames:
-                url = base + path + ".html"
-                cached = existing.get((lang, path))
-                if cached is not None and not force:
-                    md = cached[1]
-                else:
-                    r = client.get(url)
-                    r.raise_for_status()
-                    md = _html_to_markdown(r.text, base)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(fetch_page, job): job for job in jobs}
+            for fut in as_completed(futures):
+                job = futures[fut]
+                try:
+                    lang, path, title, url, md = fut.result()
+                except Exception as exc:  # one bad page must not sink the index
+                    skipped += 1
+                    log.warning("skipping %s/%s: %s", job[0], job[2], exc)
+                    continue
                 conn.execute(
                     "INSERT INTO pages (lang, path, title, url, markdown, updated_at) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
@@ -348,6 +360,9 @@ def build_index(
         if own_session:
             client.close()
         conn.close()
+
+    if skipped:
+        log.info("indexed %d pages, skipped %d failing page(s)", pages_count, skipped)
 
     # Atomic promotion: tmp lives next to target, so os.replace is atomic.
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -392,28 +407,52 @@ def refresh_now() -> None:
         _refresh_thread.start()
 
 
+def _wait_for_initial_index(timeout: float | None = None) -> str:
+    """Block (bounded) until an index exists — the cold-start case."""
+    if timeout is None:
+        timeout = float(
+            os.environ.get(
+                "GBTEC_DOCS_MCP_INIT_WAIT", DEFAULT_INITIAL_BUILD_WAIT_SECONDS
+            )
+        )
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if index_age_seconds() is not None:
+            return "ok"
+        time.sleep(0.25)
+    return "build-waiting"
+
+
 def maybe_refresh_index(
     max_age_seconds: float | None = None,
 ) -> str:
-    """Check the index age; start a background refresh when stale.
+    """Ensure the index is usable; refresh in the background when stale.
 
-    Returns a short status string suitable for tool output:
-    ``ok``, ``stale-refreshing``, ``missing-building`` or ``refresh-running``.
+    * **Missing index** (cold start): make sure a build is running and block
+      (bounded) until an index exists, so the *first* tool call works instead
+      of crashing on an empty database.
+    * **Stale index**: kick off a background rebuild (non-blocking); the
+      current — slightly old — index keeps being served.
+
+    Returns a short status string for tool output: ``ok``,
+    ``stale-refreshing`` or ``build-waiting``.
     """
     global _last_check
     max_age = max_age_seconds if max_age_seconds is not None else float(
         os.environ.get("GBTEC_DOCS_MCP_MAX_AGE", DEFAULT_MAX_AGE_SECONDS)
     )
-    # Throttle the *check* itself to at most once per minute.
+
+    age = index_age_seconds()
+    if age is None:
+        refresh_now()
+        return _wait_for_initial_index()
+
+    # Throttle the *stale* check itself to at most once per minute.
     now = time.time()
     if now - _last_check < 60:
         return "ok"
     _last_check = now
 
-    age = index_age_seconds()
-    if age is None:
-        refresh_now()
-        return "missing-building"
     if age > max_age:
         refresh_now()
         return "stale-refreshing"
