@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://docs.gbtec.com/help/portal"
 LANGS = ("de", "en")
 
-DEFAULT_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours (1 day)
+DEFAULT_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 
 _SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -397,8 +397,12 @@ def maybe_refresh_index(
 ) -> str:
     """Check the index age; start a background refresh when stale.
 
+    The default maximum age is 24 hours (``DEFAULT_MAX_AGE_SECONDS``);
+    override it via the ``GBTEC_DOCS_MCP_MAX_AGE`` environment variable
+    (in seconds).
+
     Returns a short status string suitable for tool output:
-    ``ok``, ``stale-refreshing``, ``missing-building`` or ``refresh-running``.
+    ``ok``, ``stale-refreshing`` or ``missing-building``.
     """
     global _last_check
     max_age = max_age_seconds if max_age_seconds is not None else float(

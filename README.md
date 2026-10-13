@@ -23,12 +23,13 @@ in den Sprachen **de** und **en**.
 * **Quelle:** Der Sphinx-Suchindex (`searchindex.js` pro Sprache) liefert
   die autoritative Seitenliste (aktuell ~61 Seiten/Sprache); die HTML-Seiten
   werden zu Markdown konvertiert und in SQLite (FTS5) indexiert.
-* **Frische:** Bei jedem Tool-Aufruf wird die Index-Alter geprüft. Ist der
+* **Frische:** Bei jedem Tool-Aufruf wird das Index-Alter geprüft. Ist der
   Index **älter als 24 Stunden** (konfigurierbar via
   `GBTEC_DOCS_MCP_MAX_AGE` in Sekunden), startet der Server einen
   **Background-Rebuild**, der **atomar** (Write-to-temp + `os.replace`)
   einspielt. Anfragen laufen immer weiter gegen den aktuellen Index –
-  der Server wartet nie auf den Refresh.
+  der Server wartet nie auf den Refresh. Der Check selbst ist auf max.
+  1×/Minute gedrosselt.
 * **Cache:** `~/.cache/gbtec-docs-mcp/index.db`
   (override via `GBTEC_DOCS_MCP_CACHE`).
 
