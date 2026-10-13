@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://docs.gbtec.com/help/portal"
 LANGS = ("de", "en")
 
-DEFAULT_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours (1 day)
+DEFAULT_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 
 # How long a cold-start tool call blocks while the *initial* index is being
 # built. A stale index can be served while a background refresh runs, but a
@@ -433,6 +433,10 @@ def maybe_refresh_index(
       of crashing on an empty database.
     * **Stale index**: kick off a background rebuild (non-blocking); the
       current — slightly old — index keeps being served.
+
+    The maximum age defaults to 24 hours (``DEFAULT_MAX_AGE_SECONDS``);
+    override it via the ``GBTEC_DOCS_MCP_MAX_AGE`` environment variable
+    (in seconds).
 
     Returns a short status string for tool output: ``ok``,
     ``stale-refreshing`` or ``build-waiting``.
