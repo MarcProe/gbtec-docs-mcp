@@ -1,0 +1,30 @@
+[project]
+name = "gbtec-docs-mcp"
+version = "0.1.0"
+description = "MCP server (stdio) for the GBTEC platform documentation (docs.gbtec.com): structured search & page retrieval for AI agents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Marc Proe" }]
+keywords = ["mcp", "gbtec", "documentation", "readthedocs", "sphinx"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Documentation",
+]
+# mcp 2.x renamed FastMCP -> MCPServer; stay on the stable 1.x API for now
+dependencies = [
+    "mcp>=1.2.0,<2",
+    "httpx>=0.27",
+    "beautifulsoup4>=4.12",
+    "html2text>=2020.1.16",
+]
+
+[project.scripts]
+gbtec-docs-mcp = "gbtec_docs_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gbtec_docs_mcp"]
